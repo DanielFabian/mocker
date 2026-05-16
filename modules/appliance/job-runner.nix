@@ -27,7 +27,7 @@ let
         local exit_code="$2"
         local message="''${3:-}"
         local duration_ms
-        duration_ms=$(( ($(date +%s%3N) - start_ms) ))
+        duration_ms=$(( $(date +%s%3N) - start_ms ))
         jq -nc \
           --arg job_id "''${job_id:-unknown}" \
           --arg status "$status" \
