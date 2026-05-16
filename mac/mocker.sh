@@ -43,6 +43,32 @@ make_sparse_file() {
   fi
 }
 
+ensure_vm_not_running() {
+  if [[ -f "$GVPROXY_PID" ]] && kill -0 "$(cat "$GVPROXY_PID")" 2>/dev/null; then
+    die "mocker VM/gvproxy appears to be running with pid $(cat "$GVPROXY_PID"); stop it before wiping disk images"
+  fi
+}
+
+wipe_image_signatures() {
+  local image="$1"
+  local label="$2"
+  [[ -e "$image" ]] || die "missing $label image: $image"
+
+  local size
+  size=$(stat -c '%s' "$image")
+  local mib=$((1024 * 1024))
+  local wipe_mib=8
+  local tail_seek_mib=0
+  if (( size > wipe_mib * mib )); then
+    tail_seek_mib=$(((size - wipe_mib * mib) / mib))
+  fi
+
+  log "wiping $label image signatures: $image"
+  dd if=/dev/zero of="$image" bs=1M count="$wipe_mib" conv=notrunc status=none
+  dd if=/dev/zero of="$image" bs=1M count="$wipe_mib" seek="$tail_seek_mib" conv=notrunc status=none
+  sync
+}
+
 cmd_create() {
   mkdir -p "$STATE_DIR" "$ISO_DIR" "$JOBS_DIR"
   if [[ -e "$OS_DISK" || -e "$CI_DISK" ]]; then
@@ -190,7 +216,9 @@ boot_vm() {
 parse_result() {
   local serial_log="$1"
   local result_json
-  result_json=$({ grep -a '^MOCKER_RESULT ' "$serial_log" || true; } | tail -1 | sed 's/^MOCKER_RESULT //')
+  result_json=$({
+    awk '{ marker = "MOCKER_RESULT "; pos = index($0, marker); if (pos) print substr($0, pos + length(marker)); }' "$serial_log" || true
+  } | tail -1)
   if [[ -z "$result_json" ]]; then
     log "no MOCKER_RESULT sentinel found in $serial_log"
     return 125
@@ -248,15 +276,19 @@ cmd_ssh() {
 }
 
 cmd_wipe_os() {
-  log "wiping OS disk signature only; /ci data disk is preserved"
-  "$0" ssh sudo mocker-wipe --no-reboot
-  log "reboot or run the next job to reinstall from ISO"
+  ensure_vm_not_running
+  read -r -p "Wipe OS disk image $OS_DISK and preserve /ci? type 'wipe': " confirm
+  [[ "$confirm" == "wipe" ]] || die "aborted"
+  wipe_image_signatures "$OS_DISK" "OS disk"
+  log "OS disk wiped; next run will reinstall from $ISO_PATH"
 }
 
 cmd_wipe_data() {
-  log "wiping OS and /ci data disk signatures"
-  "$0" ssh sudo mocker-wipe --data --no-reboot
-  log "reboot or run the next job to reinstall/reinitialize from ISO"
+  ensure_vm_not_running
+  read -r -p "Wipe /ci data disk image $CI_DISK? Docker/cache state will be lost. type 'wipe': " confirm
+  [[ "$confirm" == "wipe" ]] || die "aborted"
+  wipe_image_signatures "$CI_DISK" "/ci data disk"
+  log "/ci data disk wiped; next run will reinitialize it"
 }
 
 usage() {
@@ -268,8 +300,8 @@ Usage:
   mocker run -- docker run ...  run a Docker-shaped argv in the VM
   mocker ssh [args...]          SSH to the guest through localhost gvproxy
   mocker status                 show host-side state
-  mocker wipe-os                wipe guest OS disk via SSH; preserve /ci
-  mocker wipe-data              wipe guest OS and /ci disks via SSH
+  mocker wipe-os                wipe host OS disk image; preserve /ci
+  mocker wipe-data              wipe host /ci data disk image
   mocker destroy                delete all host-side state
 
 State dir: $STATE_DIR
