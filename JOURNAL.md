@@ -41,13 +41,28 @@ Expected behavior:
 6. guest powers off;
 7. host parses the sentinel and exits with `N`.
 
+Observed result, 2026-05-16: `hello-world` works. This proves the closure-baked
+ISO, installer path, vfkit boot, job seed ISO, Docker daemon/client path, and
+guest poweroff loop are all fundamentally alive.
+
+Two follow-up fixes came from the first real run:
+
+- Serial output is journal/kernel prefixed, e.g.
+  `[   17.055058] mocker-run-job[1328]: MOCKER_RESULT ...`, so host parsing must
+  search for `MOCKER_RESULT ` anywhere in a line rather than anchoring at column
+  zero.
+- Wipe cannot depend on SSH. One-shot jobs usually power off quickly, and debug
+  SSH is not part of the job protocol. Host wipe now zeros signatures in the raw
+  host disk images directly: `wipe-os` wipes only `os.img`; `wipe-data` wipes
+  only `ci.img`.
+
+Release note: `v0.1.0` was pushed to GitHub to trigger the release workflow,
+which should build `mocker-mac.iso` on `ubuntu-24.04-arm` and attach the ISO plus
+SHA256 to a GitHub Release.
+
 ## Open questions after first Mac boot
 
-- Confirm vfkit keeps running across the installer-triggered guest reboot. This
-  is expected from the devhost experience but needs first Mocker verification.
-- Confirm the fourth virtio-blk device (job ISO) does not perturb the empirical
-  OS/data by-path assignments from the devhost launcher.
-- Confirm `hdiutil makehybrid -default-volume-name MOCKER_JOB` produces the
-  Linux by-label path `/dev/disk/by-label/MOCKER_JOB` under NixOS.
+- Watch the `v0.1.0` GitHub Release build and confirm the release artifact is
+  attached, not merely uploaded as a workflow artifact.
 - Decide whether to add a debug `mocker up` mode or keep debugging via long-lived
   jobs such as `mocker run -- sleep infinity`.

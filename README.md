@@ -79,8 +79,8 @@ Useful subcommands:
 ```sh
 mocker status
 mocker ssh
-mocker wipe-os
-mocker wipe-data
+mocker wipe-os     # host-side wipe of os.img; preserves /ci
+mocker wipe-data   # host-side wipe of ci.img; drops Docker/cache state
 mocker destroy
 ```
 
