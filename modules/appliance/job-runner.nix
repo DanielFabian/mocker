@@ -9,6 +9,7 @@ let
       gnugrep
       gnused
       jq
+      docker-client
       util-linux
       systemd
     ];
